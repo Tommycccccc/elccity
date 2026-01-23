@@ -552,12 +552,12 @@ ui_left, ui_right = st.columns(2)
 
 with ui_left:
     st.subheader("Pick Subject Property Addresses")
-    subject_selected = st.multiselect("Subject addresses", all_addresses, key="subject_sel")
+    subject_selected = st.multiselect("Subject addresses", all_addresses, key="subject_sel", placeholder="Choose address")
     st.button("CREATE SUBJECT PROPERTY TABLES", use_container_width=True, on_click=set_run_subject)
 
 with ui_right:
     st.subheader("Pick Adjoining Property Addresses")
-    adjoining_selected = st.multiselect("Adjoining addresses", all_addresses, key="adjoining_sel")
+    adjoining_selected = st.multiselect("Adjoining addresses", all_addresses, key="adjoining_sel", placeholder="Choose address")
     st.button("CREATE ADJOINING PROPERTY TABLES", use_container_width=True, on_click=set_run_adjoining)
 
 st.button("CLEAR ALL", use_container_width=True, on_click=clear_all)
