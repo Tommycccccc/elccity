@@ -127,6 +127,21 @@ def parse_address_for_sort(addr: str) -> tuple[str, int, int, str]:
 
     return (street, house, unit, a_up)
 
+def direction_sort_key(direction: str) -> int:
+    """Return sort order for directions: N, NE, E, SE, S, SW, W, NW, then blank"""
+    order = {
+        "North": 0,
+        "Northeast": 1,
+        "East": 2,
+        "Southeast": 3,
+        "South": 4,
+        "Southwest": 5,
+        "West": 6,
+        "Northwest": 7,
+        "": 8  # Blank goes last
+    }
+    return order.get(direction, 9)
+
 def find_and_combine_address_columns(df: pd.DataFrame) -> pd.DataFrame:
     """
     Find address column(s) and combine them into a single ADDRESS column.
@@ -457,35 +472,64 @@ def build_subject_report_docx(subject_selected: list[str], df: pd.DataFrame) -> 
 def build_adjoining_report_docx(adjoining_selected: list[str], df: pd.DataFrame, direction_map: dict) -> bytes:
     doc = Document()
     doc.add_paragraph("Addresses of adjoining properties were also reviewed. Historical tenants included:")
-
-    table = doc.add_table(rows=1, cols=3)
-    table.style = "Table Grid"
-    table.autofit = True
-
-    hdr = table.rows[0].cells
-    hdr[0].text = "Direction"
-    hdr[1].text = "Adjoining Property Addresses"
-    hdr[2].text = "Occupant Listed (Year)"
-    set_table_header_style(table)
-
-    for addr in adjoining_selected:
-        block = df[df["ADDRESS"] == addr].copy()
-        out = format_year_listing(block)
-        runs = compress_year_runs(out)
-
+    
+    # Sort addresses by direction: N, NE, E, SE, S, SW, W, NW, then blank
+    sorted_addresses = sorted(
+        adjoining_selected,
+        key=lambda addr: direction_sort_key(direction_map.get(addr, ""))
+    )
+    
+    # Group addresses by direction
+    from collections import OrderedDict
+    direction_groups = OrderedDict()
+    for addr in sorted_addresses:
         direction = direction_map.get(addr, "")
-
-        lines = []
-        for year_label, occ in runs:
-            if occ:
-                lines.append(f"{occ} ({year_label})")
-        occ_text = "\n".join(lines) if lines else "No results"
-
-        row = table.add_row().cells
-        row[0].text = direction
-        row[1].text = addr
-        row[2].text = occ_text
-
+        if direction not in direction_groups:
+            direction_groups[direction] = []
+        direction_groups[direction].append(addr)
+    
+    # Create a table for each direction group
+    for direction, addresses in direction_groups.items():
+        # Add direction header
+        if direction:
+            heading = doc.add_paragraph()
+            heading.add_run(f"Direction: {direction}").bold = True
+            heading.style = 'Heading 2'
+        else:
+            heading = doc.add_paragraph()
+            heading.add_run("Direction: (Not Specified)").bold = True
+            heading.style = 'Heading 2'
+        
+        # Create table for this direction (2 columns: Address, Occupant)
+        table = doc.add_table(rows=1, cols=2)
+        table.style = "Table Grid"
+        table.autofit = True
+        
+        # Set column headers
+        hdr = table.rows[0].cells
+        hdr[0].text = "Adjoining Property Addresses"
+        hdr[1].text = "Occupant Listed (Year)"
+        set_table_header_style(table)
+        
+        # Add rows for each address in this direction
+        for addr in addresses:
+            block = df[df["ADDRESS"] == addr].copy()
+            out = format_year_listing(block)
+            runs = compress_year_runs(out)
+            
+            lines = []
+            for year_label, occ in runs:
+                if occ:
+                    lines.append(f"{occ} ({year_label})")
+            occ_text = "\n".join(lines) if lines else "No results"
+            
+            row = table.add_row().cells
+            row[0].text = addr
+            row[1].text = occ_text
+        
+        # Add spacing after each table
+        doc.add_paragraph()
+    
     return docx_bytes(doc)
 
 # ---------- Upload ----------
@@ -591,8 +635,10 @@ with out_right:
 
     if st.session_state["run_adjoining"] and adjoining_selected:
 
-        with st.expander("Optional: Set directions for adjoining addresses (North/East/South/West)", expanded=False):
-            dir_opts = ["", "North", "East", "South", "West"]
+        with st.expander("Optional: Set directions for adjoining addresses", expanded=False):
+            # Updated direction options with diagonals
+            dir_opts = ["", "North", "Northeast", "East", "Southeast", "South", "Southwest", "West", "Northwest"]
+            
             for a in adjoining_selected:
                 key = f"dir_{a}"
                 if a not in st.session_state["dir_map"]:
